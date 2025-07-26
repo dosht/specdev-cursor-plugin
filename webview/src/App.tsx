@@ -18,6 +18,11 @@ const App: React.FC = () => {
     design: '',
     tasks: ''
   });
+  const [availableFeatures, setAvailableFeatures] = useState<string[]>([]);
+  const [currentFeature, setCurrentFeature] = useState<string>('');
+  const [showCreateFeature, setShowCreateFeature] = useState(false);
+  const [newFeatureName, setNewFeatureName] = useState('');
+  
   // Review status for each doc
   const [reviewStatus, setReviewStatus] = useState<{
     requirements: 'pending' | 'approved' | 'rejected';
@@ -31,35 +36,92 @@ const App: React.FC = () => {
   const [showAgentInfo, setShowAgentInfo] = useState(true);
 
   useEffect(() => {
-    loadSpecDevFiles();
+    loadFeatures();
   }, []);
 
-  const loadSpecDevFiles = async () => {
-    try {
-      // This would communicate with the VS Code extension to load files
-      const content = await window.vscode?.postMessage({ 
-        command: 'loadFiles' 
-      });
-      if (content) {
-        setFileContent(content);
+  useEffect(() => {
+    // Listen for messages from the extension
+    const handleMessage = (event: MessageEvent) => {
+      const message = event.data;
+      switch (message.command) {
+        case 'featuresLoaded':
+          setAvailableFeatures(message.features || []);
+          break;
+        case 'filesLoaded':
+          setFileContent(message.content);
+          setCurrentFeature(message.currentFeature);
+          break;
       }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const loadFeatures = async () => {
+    try {
+      window.vscode?.postMessage({ command: 'loadFeatures' });
+    } catch (error) {
+      console.error('Failed to load features:', error);
+    }
+  };
+
+  const loadSpecDevFiles = async (feature: string) => {
+    try {
+      window.vscode?.postMessage({ 
+        command: 'loadFiles',
+        feature
+      });
     } catch (error) {
       console.error('Failed to load files:', error);
     }
   };
 
   const saveFile = async (type: TabType, content: string) => {
+    if (!currentFeature) {
+      alert('Please select a feature first');
+      return;
+    }
+
     setFileContent(prev => ({ ...prev, [type]: content }));
     
-    // Save to .specdev folder
+    // Save to .specdev/specs/{feature} folder
     try {
       await window.vscode?.postMessage({
         command: 'saveFile',
         type,
-        content
+        content,
+        feature: currentFeature
       });
     } catch (error) {
       console.error('Failed to save file:', error);
+    }
+  };
+
+  const handleFeatureChange = (feature: string) => {
+    if (feature) {
+      setCurrentFeature(feature);
+      loadSpecDevFiles(feature);
+    } else {
+      setCurrentFeature('');
+      setFileContent({ requirements: '', design: '', tasks: '' });
+    }
+  };
+
+  const handleCreateFeature = async () => {
+    if (newFeatureName.trim()) {
+      try {
+        await window.vscode?.postMessage({
+          command: 'createFeature',
+          featureName: newFeatureName.trim()
+        });
+        setNewFeatureName('');
+        setShowCreateFeature(false);
+        // Reload features after creation
+        setTimeout(() => loadFeatures(), 100);
+      } catch (error) {
+        console.error('Failed to create feature:', error);
+      }
     }
   };
 
@@ -185,37 +247,87 @@ sequenceDiagram
         <h1>SpecDev - Specification Development</h1>
       </header>
       
-      <nav className="tab-navigation">
-        {(['requirements', 'design', 'tasks'] as TabType[]).map((tab) => (
-          <button
-            key={tab}
-            className={`tab-button ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </nav>
+      <div className="feature-selector">
+        <label htmlFor="feature-select">Feature:</label>
+        <select 
+          id="feature-select" 
+          value={currentFeature}
+          onChange={(e) => handleFeatureChange(e.target.value)}
+        >
+          <option value="">Select a feature...</option>
+          {availableFeatures.map(feature => (
+            <option key={feature} value={feature}>
+              {feature}
+            </option>
+          ))}
+        </select>
+        <button onClick={() => setShowCreateFeature(true)}>Create New Feature</button>
+      </div>
 
-      <main className="main-content">
-        {renderStatusBanner()}
-        {activeTab === 'tasks' ? (
-          <TaskList
-            content={currentContent}
-            onChange={(content) => saveFile('tasks', content)}
-            // Add more props for review and workflow as needed
-          />
-        ) : (
-          <MarkdownEditor
-            content={currentContent}
-            onChange={(content) => saveFile(activeTab, content)}
-            enableMermaid={activeTab === 'design'}
-            reviewStatus={reviewStatus[activeTab]}
-            onReview={(status) => handleReview(activeTab, status)}
-            onRegenerate={() => handleRegenerate(activeTab)}
-          />
-        )}
-      </main>
+      {showCreateFeature && (
+        <div className="create-feature-modal">
+          <div className="modal-content">
+            <h3>Create New Feature</h3>
+            <input
+              type="text"
+              placeholder="Enter feature name..."
+              value={newFeatureName}
+              onChange={(e) => setNewFeatureName(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleCreateFeature()}
+            />
+            <div className="modal-actions">
+              <button onClick={handleCreateFeature}>Create</button>
+              <button onClick={() => setShowCreateFeature(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {availableFeatures.length === 0 && !showCreateFeature ? (
+        <div className="no-features">
+          <h3>No features found</h3>
+          <p>Create your first feature to get started with SpecDev.</p>
+          <button onClick={() => setShowCreateFeature(true)}>Create First Feature</button>
+        </div>
+      ) : currentFeature ? (
+        <>
+          <nav className="tab-navigation">
+            {(['requirements', 'design', 'tasks'] as TabType[]).map((tab) => (
+              <button
+                key={tab}
+                className={`tab-button ${activeTab === tab ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab)}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </nav>
+
+          <main className="main-content">
+            {renderStatusBanner()}
+            {activeTab === 'tasks' ? (
+              <TaskList
+                content={currentContent}
+                onChange={(content) => saveFile('tasks', content)}
+                // Add more props for review and workflow as needed
+              />
+            ) : (
+              <MarkdownEditor
+                content={currentContent}
+                onChange={(content) => saveFile(activeTab, content)}
+                enableMermaid={activeTab === 'design'}
+                reviewStatus={reviewStatus[activeTab]}
+                onReview={(status) => handleReview(activeTab, status)}
+                onRegenerate={() => handleRegenerate(activeTab)}
+              />
+            )}
+          </main>
+        </>
+      ) : (
+        <div className="select-feature">
+          <p>Please select a feature from the dropdown above to view and edit its specifications.</p>
+        </div>
+      )}
     </div>
   );
 };

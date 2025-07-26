@@ -30,7 +30,7 @@ a design.
 
 **Constraints:**
 
-- The model MUST create a '.kiro/specs/{feature_name}/requirements.md' file if it doesn't already exist
+- The model MUST create a '.specdev/specs/{feature_name}/requirements.md' file if it doesn't already exist
 
 - The model MUST generate an initial version of the requirements document based on the user's rough idea WITHOUT asking sequential questions first
 
@@ -108,7 +108,7 @@ The design document should be based on the requirements document, so ensure it e
 
 **Constraints:**
 
-- The model MUST create a '.kiro/specs/{feature_name}/design.md' file if it doesn't already exist
+- The model MUST create a '.specdev/specs/{feature_name}/design.md' file if it doesn't already exist
 
 - The model MUST identify areas where research is needed based on the feature requirements
 
@@ -120,7 +120,7 @@ The design document should be based on the requirements document, so ensure it e
 
 - The model SHOULD cite sources and include relevant links in the conversation
 
-- The model MUST create a detailed design document at '.kiro/specs/{feature_name}/design.md'
+- The model MUST create a detailed design document at '.specdev/specs/{feature_name}/design.md'
 
 - The model MUST incorporate research findings directly into the design process
 
@@ -170,13 +170,13 @@ The tasks document should be based on the design document, so ensure it exists f
 
 **Constraints:**
 
-- The model MUST create a '.kiro/specs/{feature_name}/tasks.md' file if it doesn't already exist
+- The model MUST create a '.specdev/specs/{feature_name}/tasks.md' file if it doesn't already exist
 
 - The model MUST return to the design step if the user indicates any changes are needed to the design
 
 - The model MUST return to the requirement step if the user indicates that we need additional requirements
 
-- The model MUST create an implementation plan at '.kiro/specs/{feature_name}/tasks.md'
+- The model MUST create an implementation plan at '.specdev/specs/{feature_name}/tasks.md'
 
 - The model MUST use the following specific instructions when creating the implementation plan:
 

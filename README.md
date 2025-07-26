@@ -54,12 +54,14 @@ SpecDev is a VS Code/Cursor extension that implements a Kiro IDE-style workflow 
 1. **Command Palette**: Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac) and type "Open SpecDev"
 2. **Explorer Context Menu**: Right-click in the Explorer and select "Open SpecDev"
 
-### Working with Files
+### Working with Features
 
-SpecDev automatically creates a `.specdev` folder in your workspace root containing:
+SpecDev organizes specifications by features under `.specdev/specs/{feature-name}/`. Each feature contains:
 - `requirements.md` - Requirements documentation
 - `design.md` - Design documentation with Mermaid diagram support
 - `tasks.md` - Task list with interactive checkboxes
+
+Use the feature dropdown in the SpecDev interface to select and work with different features under development.
 
 ### Requirements Tab
 
@@ -185,9 +187,15 @@ The `.specdev` folder is automatically created in your workspace. You can:
 ```
 your-project/
 ├── .specdev/
-│   ├── requirements.md
-│   ├── design.md
-│   └── tasks.md
+│   └── specs/
+│       ├── feature-1/
+│       │   ├── requirements.md
+│       │   ├── design.md
+│       │   └── tasks.md
+│       └── feature-2/
+│           ├── requirements.md
+│           ├── design.md
+│           └── tasks.md
 └── ... (your project files)
 ```
 
@@ -236,6 +244,12 @@ npm run build
 MIT License - see LICENSE file for details.
 
 ## Changelog
+
+### 0.2.0
+- **Feature-based organization**: Files now stored under `.specdev/specs/{feature-name}/`
+- **Feature dropdown**: Select from available features under development
+- **Create new features**: Add new features through the interface
+- **Improved UI**: Better organization and user experience
 
 ### 0.1.0
 - Initial release

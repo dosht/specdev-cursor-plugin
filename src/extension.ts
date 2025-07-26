@@ -5,6 +5,7 @@ import * as path from 'path';
 class SpecDevProvider {
   private static currentPanel: vscode.WebviewPanel | undefined;
   private readonly extensionUri: vscode.Uri;
+  private currentFeature: string = '';
 
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
@@ -48,15 +49,31 @@ class SpecDevProvider {
     panel.webview.onDidReceiveMessage(
       async (message) => {
         switch (message.command) {
+          case 'loadFeatures':
+            const features = await this.getAvailableFeatures();
+            panel.webview.postMessage({
+              command: 'featuresLoaded',
+              features: features
+            });
+            break;
           case 'loadFiles':
-            const fileContent = await this.loadSpecDevFiles();
+            const fileContent = await this.loadSpecDevFiles(message.feature);
             panel.webview.postMessage({
               command: 'filesLoaded',
-              content: fileContent
+              content: fileContent,
+              currentFeature: message.feature
             });
             break;
           case 'saveFile':
-            await this.saveSpecDevFile(message.type, message.content);
+            await this.saveSpecDevFile(message.type, message.content, message.feature);
+            break;
+          case 'createFeature':
+            await this.createFeature(message.featureName);
+            const updatedFeatures = await this.getAvailableFeatures();
+            panel.webview.postMessage({
+              command: 'featuresLoaded',
+              features: updatedFeatures
+            });
             break;
           case 'regenerate':
             vscode.window.showInformationMessage(`Regenerating ${message.type}... (stub)`);
@@ -68,31 +85,170 @@ class SpecDevProvider {
     );
   }
 
-  private async loadSpecDevFiles(): Promise<{requirements: string, design: string, tasks: string}> {
+  private async getAvailableFeatures(): Promise<string[]> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      return [];
+    }
+
+    const specsPath = path.join(workspaceFolder.uri.fsPath, '.specdev', 'specs');
+    
+    // Ensure .specdev/specs directory exists
+    if (!fs.existsSync(specsPath)) {
+      fs.mkdirSync(specsPath, { recursive: true });
+    }
+
+    try {
+      const features = fs.readdirSync(specsPath, { withFileTypes: true })
+        .filter(dirent => dirent.isDirectory())
+        .map(dirent => dirent.name);
+      return features;
+    } catch (error) {
+      console.error('Error reading features:', error);
+      return [];
+    }
+  }
+
+  private async createFeature(featureName: string): Promise<void> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      vscode.window.showErrorMessage('No workspace folder found');
+      return;
+    }
+
+    const featurePath = path.join(workspaceFolder.uri.fsPath, '.specdev', 'specs', featureName);
+    
+    // Ensure feature directory exists
+    if (!fs.existsSync(featurePath)) {
+      fs.mkdirSync(featurePath, { recursive: true });
+    }
+
+    // Create default files for the feature
+    const files = {
+      'requirements.md': this.getDefaultRequirementsContent(featureName),
+      'design.md': this.getDefaultDesignContent(featureName),
+      'tasks.md': this.getDefaultTasksContent(featureName)
+    };
+
+    for (const [filename, content] of Object.entries(files)) {
+      const filePath = path.join(featurePath, filename);
+      if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, content, 'utf8');
+      }
+    }
+
+    vscode.window.showInformationMessage(`Feature "${featureName}" created successfully`);
+  }
+
+  private getDefaultRequirementsContent(featureName: string): string {
+    return `# Requirements Document - ${featureName}
+
+## Introduction
+[Introduction text here for ${featureName}]
+
+## Requirements
+
+### Requirement 1
+**User Story:** As a [role], I want [feature], so that [benefit]
+
+#### Acceptance Criteria
+This section should have EARS requirements
+1. WHEN [event] THEN [system] SHALL [response]
+2. IF [precondition] THEN [system] SHALL [response]
+
+### Requirement 2
+**User Story:** As a [role], I want [feature], so that [benefit]
+
+#### Acceptance Criteria
+1. WHEN [event] THEN [system] SHALL [response]
+2. WHEN [event] AND [condition] THEN [system] SHALL [response]
+`;
+  }
+
+  private getDefaultDesignContent(featureName: string): string {
+    return `# Design Document - ${featureName}
+
+## Architecture Overview
+\`\`\`mermaid
+graph TD
+    A[User Interface] --> B[Business Logic]
+    B --> C[Data Layer]
+    C --> D[Storage]
+\`\`\`
+
+## System Components
+
+### Component 1
+Description of component 1
+
+### Component 2  
+Description of component 2
+
+## Data Flow
+\`\`\`mermaid
+sequenceDiagram
+    participant U as User
+    participant S as System
+    participant D as Database
+    
+    U->>S: Request
+    S->>D: Query
+    D->>S: Response
+    S->>U: Result
+\`\`\`
+`;
+  }
+
+  private getDefaultTasksContent(featureName: string): string {
+    return `# Task List - ${featureName}
+
+## Sprint 1
+
+- [ ] Task 1: Implement user authentication
+  - [ ] Create login form
+  - [ ] Add validation
+  - [ ] Integrate with backend API
+
+- [ ] Task 2: Design database schema
+  - [x] Define user table
+  - [ ] Define product table
+  - [ ] Create relationships
+
+- [ ] Task 3: Setup project infrastructure
+  - [x] Initialize repository
+  - [x] Setup CI/CD pipeline
+  - [ ] Configure deployment
+`;
+  }
+
+  private async loadSpecDevFiles(feature: string): Promise<{requirements: string, design: string, tasks: string}> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       return { requirements: '', design: '', tasks: '' };
     }
 
-    const specdevPath = path.join(workspaceFolder.uri.fsPath, '.specdev');
+    const featurePath = path.join(workspaceFolder.uri.fsPath, '.specdev', 'specs', feature);
     
-    // Ensure .specdev directory exists
-    if (!fs.existsSync(specdevPath)) {
-      fs.mkdirSync(specdevPath, { recursive: true });
+    // Ensure feature directory exists
+    if (!fs.existsSync(featurePath)) {
+      fs.mkdirSync(featurePath, { recursive: true });
     }
 
     const files = ['requirements.md', 'design.md', 'tasks.md'];
     const content: any = {};
 
     for (const file of files) {
-      const filePath = path.join(specdevPath, file);
+      const filePath = path.join(featurePath, file);
       const key = file.replace('.md', '');
       
       try {
         if (fs.existsSync(filePath)) {
           content[key] = fs.readFileSync(filePath, 'utf8');
         } else {
-          content[key] = '';
+          // Create default content if file doesn't exist
+          const defaultContent = this.getDefaultContentForFile(file, feature);
+          fs.writeFileSync(filePath, defaultContent, 'utf8');
+          content[key] = defaultContent;
         }
       } catch (error) {
         content[key] = '';
@@ -102,25 +258,38 @@ class SpecDevProvider {
     return content;
   }
 
-  private async saveSpecDevFile(type: string, content: string): Promise<void> {
+  private getDefaultContentForFile(filename: string, feature: string): string {
+    switch (filename) {
+      case 'requirements.md':
+        return this.getDefaultRequirementsContent(feature);
+      case 'design.md':
+        return this.getDefaultDesignContent(feature);
+      case 'tasks.md':
+        return this.getDefaultTasksContent(feature);
+      default:
+        return '';
+    }
+  }
+
+  private async saveSpecDevFile(type: string, content: string, feature: string): Promise<void> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       vscode.window.showErrorMessage('No workspace folder found');
       return;
     }
 
-    const specdevPath = path.join(workspaceFolder.uri.fsPath, '.specdev');
+    const featurePath = path.join(workspaceFolder.uri.fsPath, '.specdev', 'specs', feature);
     
-    // Ensure .specdev directory exists
-    if (!fs.existsSync(specdevPath)) {
-      fs.mkdirSync(specdevPath, { recursive: true });
+    // Ensure feature directory exists
+    if (!fs.existsSync(featurePath)) {
+      fs.mkdirSync(featurePath, { recursive: true });
     }
 
-    const filePath = path.join(specdevPath, `${type}.md`);
+    const filePath = path.join(featurePath, `${type}.md`);
     
     try {
       fs.writeFileSync(filePath, content, 'utf8');
-      vscode.window.showInformationMessage(`${type}.md saved successfully`);
+      vscode.window.showInformationMessage(`${type}.md saved successfully for feature "${feature}"`);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to save ${type}.md: ${error}`);
     }
@@ -145,6 +314,31 @@ class SpecDevProvider {
             .container {
                 max-width: 1200px;
                 margin: 0 auto;
+            }
+            .feature-selector {
+                margin-bottom: 20px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .feature-selector select {
+                padding: 8px 12px;
+                background: var(--vscode-input-background);
+                color: var(--vscode-input-foreground);
+                border: 1px solid var(--vscode-input-border);
+                border-radius: 4px;
+                min-width: 200px;
+            }
+            .feature-selector button {
+                background: var(--vscode-button-background);
+                color: var(--vscode-button-foreground);
+                border: none;
+                padding: 8px 12px;
+                cursor: pointer;
+                border-radius: 4px;
+            }
+            .feature-selector button:hover {
+                background: var(--vscode-button-hoverBackground);
             }
             .tabs {
                 display: flex;
@@ -194,57 +388,132 @@ class SpecDevProvider {
             button:hover {
                 background: var(--vscode-button-hoverBackground);
             }
+            .no-features {
+                text-align: center;
+                padding: 40px;
+                color: var(--vscode-descriptionForeground);
+            }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>SpecDev - Specification Development</h1>
             
-            <div class="tabs">
-                <button class="tab active" onclick="showTab('requirements')">Requirements</button>
-                <button class="tab" onclick="showTab('design')">Design</button>
-                <button class="tab" onclick="showTab('tasks')">Tasks</button>
+            <div class="feature-selector">
+                <label for="feature-select">Feature:</label>
+                <select id="feature-select" onchange="loadFeature()">
+                    <option value="">Select a feature...</option>
+                </select>
+                <button onclick="createNewFeature()">Create New Feature</button>
             </div>
 
-            <div id="requirements" class="content active">
-                <div class="toolbar">
-                    <button onclick="saveFile('requirements')">Save Requirements</button>
-                </div>
-                <textarea id="requirements-content" placeholder="Enter requirements in markdown format..."></textarea>
+            <div id="no-features" class="no-features" style="display: none;">
+                <h3>No features found</h3>
+                <p>Create your first feature to get started with SpecDev.</p>
+                <button onclick="createNewFeature()">Create First Feature</button>
             </div>
 
-            <div id="design" class="content">
-                <div class="toolbar">
-                    <button onclick="saveFile('design')">Save Design</button>
+            <div id="main-content" style="display: none;">
+                <div class="tabs">
+                    <button class="tab active" onclick="showTab('requirements')">Requirements</button>
+                    <button class="tab" onclick="showTab('design')">Design</button>
+                    <button class="tab" onclick="showTab('tasks')">Tasks</button>
                 </div>
-                <textarea id="design-content" placeholder="Enter design documentation with Mermaid diagrams..."></textarea>
-            </div>
 
-            <div id="tasks" class="content">
-                <div class="toolbar">
-                    <button onclick="saveFile('tasks')">Save Tasks</button>
+                <div id="requirements" class="content active">
+                    <div class="toolbar">
+                        <button onclick="saveFile('requirements')">Save Requirements</button>
+                    </div>
+                    <textarea id="requirements-content" placeholder="Enter requirements in markdown format..."></textarea>
                 </div>
-                <textarea id="tasks-content" placeholder="Enter tasks in markdown format with checkboxes..."></textarea>
+
+                <div id="design" class="content">
+                    <div class="toolbar">
+                        <button onclick="saveFile('design')">Save Design</button>
+                    </div>
+                    <textarea id="design-content" placeholder="Enter design documentation with Mermaid diagrams..."></textarea>
+                </div>
+
+                <div id="tasks" class="content">
+                    <div class="toolbar">
+                        <button onclick="saveFile('tasks')">Save Tasks</button>
+                    </div>
+                    <textarea id="tasks-content" placeholder="Enter tasks in markdown format with checkboxes..."></textarea>
+                </div>
             </div>
         </div>
 
         <script>
             const vscode = acquireVsCodeApi();
             let currentContent = { requirements: '', design: '', tasks: '' };
+            let currentFeature = '';
+            let availableFeatures = [];
 
-            // Load files on startup
-            vscode.postMessage({ command: 'loadFiles' });
+            // Load features on startup
+            vscode.postMessage({ command: 'loadFeatures' });
 
             // Handle messages from extension
             window.addEventListener('message', event => {
                 const message = event.data;
                 switch (message.command) {
+                    case 'featuresLoaded':
+                        availableFeatures = message.features || [];
+                        updateFeatureDropdown();
+                        break;
                     case 'filesLoaded':
                         currentContent = message.content;
+                        currentFeature = message.currentFeature;
                         updateTextareas();
                         break;
                 }
             });
+
+            function updateFeatureDropdown() {
+                const select = document.getElementById('feature-select');
+                const noFeatures = document.getElementById('no-features');
+                const mainContent = document.getElementById('main-content');
+                
+                // Clear existing options
+                select.innerHTML = '<option value="">Select a feature...</option>';
+                
+                if (availableFeatures.length === 0) {
+                    noFeatures.style.display = 'block';
+                    mainContent.style.display = 'none';
+                } else {
+                    noFeatures.style.display = 'none';
+                    mainContent.style.display = 'block';
+                    
+                    // Add feature options
+                    availableFeatures.forEach(feature => {
+                        const option = document.createElement('option');
+                        option.value = feature;
+                        option.textContent = feature;
+                        select.appendChild(option);
+                    });
+                }
+            }
+
+            function loadFeature() {
+                const select = document.getElementById('feature-select');
+                const selectedFeature = select.value;
+                
+                if (selectedFeature) {
+                    vscode.postMessage({
+                        command: 'loadFiles',
+                        feature: selectedFeature
+                    });
+                }
+            }
+
+            function createNewFeature() {
+                const featureName = prompt('Enter feature name:');
+                if (featureName && featureName.trim()) {
+                    vscode.postMessage({
+                        command: 'createFeature',
+                        featureName: featureName.trim()
+                    });
+                }
+            }
 
             function showTab(tabName) {
                 // Hide all content
@@ -261,11 +530,17 @@ class SpecDevProvider {
             }
 
             function saveFile(type) {
+                if (!currentFeature) {
+                    alert('Please select a feature first');
+                    return;
+                }
+                
                 const content = document.getElementById(type + '-content').value;
                 vscode.postMessage({
                     command: 'saveFile',
                     type: type,
-                    content: content
+                    content: content,
+                    feature: currentFeature
                 });
             }
 
@@ -302,17 +577,13 @@ export function activate(context: vscode.ExtensionContext) {
   const initCmd = vscode.commands.registerCommand('specdev.init', async () => {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) return;
+    
+    // Create .specdev/specs directory structure
     const specdevPath = path.join(workspaceFolder.uri.fsPath, '.specdev');
+    const specsPath = path.join(specdevPath, 'specs');
     if (!fs.existsSync(specdevPath)) fs.mkdirSync(specdevPath, { recursive: true });
-    const templates = {
-      'requirements.md': '# Requirements Document\n\n## Introduction\n[Introduction text here]\n',
-      'design.md': '# Design Document\n\n## Architecture Overview\n',
-      'tasks.md': '# Task List\n\n- [ ] Example task\n',
-    };
-    for (const [file, content] of Object.entries(templates)) {
-      const filePath = path.join(specdevPath, file);
-      if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, content, 'utf8');
-    }
+    if (!fs.existsSync(specsPath)) fs.mkdirSync(specsPath, { recursive: true });
+    
     // Generate .cursor/rules files
     const cursorRulesPath = path.join(workspaceFolder.uri.fsPath, '.cursor', 'rules');
     if (!fs.existsSync(cursorRulesPath)) fs.mkdirSync(cursorRulesPath, { recursive: true });
@@ -323,7 +594,7 @@ export function activate(context: vscode.ExtensionContext) {
     const tasksDest = path.join(cursorRulesPath, 'specdev-tasks.mdc');
     if (fs.existsSync(specSrc)) fs.copyFileSync(specSrc, specDest);
     if (fs.existsSync(tasksSrc)) fs.copyFileSync(tasksSrc, tasksDest);
-    vscode.window.showInformationMessage('SpecDev initialized and .cursor/rules files created.');
+    vscode.window.showInformationMessage('SpecDev initialized with new .specdev/specs structure and .cursor/rules files created.');
   });
 
   // /specdev generate requirements from prompt
